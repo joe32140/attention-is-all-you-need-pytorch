@@ -15,7 +15,9 @@ import transformer.Constants as Constants
 from dataset import TranslationDataset, paired_collate_fn
 from transformer.Models import Transformer
 from transformer.Optim import ScheduledOptim
-
+#from revised_loader import revised_Loaders
+from ROC_loader_manager import Loaders
+from build_vocab import Vocabulary
 def cal_performance(pred, gold, smoothing=False):
     ''' Apply label smoothing if needed '''
 
@@ -193,9 +195,9 @@ def main():
     ''' Main function '''
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-data', required=True)
+    #parser.add_argument('-data', required=True)
 
-    parser.add_argument('-epoch', type=int, default=10)
+    parser.add_argument('-epoch', type=int, default=200)
     parser.add_argument('-batch_size', type=int, default=64)
 
     #parser.add_argument('-d_word_vec', type=int, default=512)
@@ -214,9 +216,11 @@ def main():
 
     parser.add_argument('-log', default=None)
     parser.add_argument('-save_model', default=None)
+    parser.add_argument('-model', default=None)
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-no_cuda', action='store_true')
+    parser.add_argument('-device', type=str, default='0')
     parser.add_argument('-label_smoothing', action='store_true')
 
     opt = parser.parse_args()
@@ -224,13 +228,16 @@ def main():
     opt.d_word_vec = opt.d_model
 
     #========= Loading Dataset =========#
-    data = torch.load(opt.data)
-    opt.max_token_seq_len = data['settings'].max_token_seq_len
+    #data = torch.load(opt.data)
+    #opt.max_token_seq_len = data['settings'].max_token_seq_len
+    opt.max_token_seq_len = 26
 
-    training_data, validation_data = prepare_dataloaders(data, opt)
+    Dataloader = Loaders()
+    Dataloader.get_loaders(opt)
+    training_data, validation_data = Dataloader.loader['train'], Dataloader.loader['val']
 
-    opt.src_vocab_size = training_data.dataset.src_vocab_size
-    opt.tgt_vocab_size = training_data.dataset.tgt_vocab_size
+    opt.src_vocab_size = len(Dataloader.frame_vocab)
+    opt.tgt_vocab_size = len(Dataloader.story_vocab)
 
     #========= Preparing Model =========#
     if opt.embs_share_weight:
@@ -239,7 +246,7 @@ def main():
 
     print(opt)
 
-    device = torch.device('cuda' if opt.cuda else 'cpu')
+    device = torch.device(f'cuda:{opt.device}' if opt.cuda else 'cpu')
     transformer = Transformer(
         opt.src_vocab_size,
         opt.tgt_vocab_size,
@@ -254,6 +261,10 @@ def main():
         n_layers=opt.n_layers,
         n_head=opt.n_head,
         dropout=opt.dropout).to(device)
+
+    if opt.model:
+        checkpoint = torch.load(opt.model)
+        transformer.load_state_dict(checkpoint['model'])
 
     optimizer = ScheduledOptim(
         optim.Adam(

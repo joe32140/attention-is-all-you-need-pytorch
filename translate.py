@@ -8,6 +8,8 @@ from tqdm import tqdm
 from dataset import collate_fn, TranslationDataset
 from transformer.Translator import Translator
 from preprocess import read_instances_from_file, convert_instance_to_idx_seq
+from ROC_loader_manager import Loaders
+from build_vocab import Vocabulary
 
 def main():
     '''Main Function'''
@@ -25,7 +27,7 @@ def main():
                         be the decoded sequence""")
     parser.add_argument('-beam_size', type=int, default=5,
                         help='Beam size')
-    parser.add_argument('-batch_size', type=int, default=30,
+    parser.add_argument('-batch_size', type=int, default=1,
                         help='Batch size')
     parser.add_argument('-n_best', type=int, default=1,
                         help="""If verbose is set, will output the n_best
@@ -36,6 +38,7 @@ def main():
     opt.cuda = not opt.no_cuda
 
     # Prepare DataLoader
+    """
     preprocess_data = torch.load(opt.vocab)
     preprocess_settings = preprocess_data['settings']
     test_src_word_insts = read_instances_from_file(
@@ -53,16 +56,29 @@ def main():
         num_workers=2,
         batch_size=opt.batch_size,
         collate_fn=collate_fn)
+    """
+
+    Dataloader = Loaders()
+    Dataloader.get_loaders(opt)
+    test_loader = Dataloader.loader['val']
+
+    opt.src_vocab_size = len(Dataloader.frame_vocab)
+    opt.tgt_vocab_size = len(Dataloader.story_vocab)
 
     translator = Translator(opt)
 
-    with open(opt.output, 'w') as f:
-        for batch in tqdm(test_loader, mininterval=2, desc='  - (Test)', leave=False):
-            all_hyp, all_scores = translator.translate_batch(*batch)
+    with open(opt.output, 'w', buffering=1) as f:
+        for frame, frame_pos, gt_seqs, _ in tqdm(test_loader, mininterval=2, desc='  - (Test)', leave=False):
+            all_hyp, all_scores = translator.translate_batch(frame, frame_pos)
             for idx_seqs in all_hyp:
-                for idx_seq in idx_seqs:
-                    pred_line = ' '.join([test_loader.dataset.tgt_idx2word[idx] for idx in idx_seq])
+                for idx_frame, idx_seq, gt_seq in zip(frame, idx_seqs, gt_seqs):
+                    pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx] for idx in idx_seq])
                     f.write(pred_line + '\n')
+                    pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in idx_frame])
+                    f.write(pred_line + '\n')
+                    pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in gt_seq])
+                    f.write(pred_line + '\n')
+                    f.write("===============================================\n")
     print('[Info] Finished.')
 
 if __name__ == "__main__":
