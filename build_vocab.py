@@ -5,6 +5,7 @@ import json
 import argparse
 from collections import Counter
 import numpy as np
+from transformer import Constants
 
 class Vocabulary(object):
     """Simple vocabulary wrapper."""
@@ -114,10 +115,15 @@ def build_vocab(text, threshold, paragraph):
     for word, cnt in counter.items():
         word_count[word] = cnt
     print("word_count",word_count)
-    vocab.add_word('<pad>')
-    vocab.add_word('<start>')
-    vocab.add_word('<end>')
-    vocab.add_word('<unk>')
+    vocab.add_word(Constants.PAD_WORD)
+    vocab.add_word(Constants.BOS_WORD)
+    vocab.add_word(Constants.BOS_WORD2)
+    vocab.add_word(Constants.BOS_WORD3)
+    vocab.add_word(Constants.BOS_WORD4)
+    vocab.add_word(Constants.BOS_WORD5)
+    vocab.add_word(Constants.EOS_WORD)
+    vocab.add_word(Constants.UNK_WORD)
+
     if paragraph:
         vocab.add_word('<start1>')
         vocab.add_word('<start2>')

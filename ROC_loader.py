@@ -10,85 +10,88 @@ from PIL import ImageFile
 from build_vocab import Vocabulary
 import operator
 from functools import reduce
-
+from transformer import Constants
 
 class ROCDataset(Dataset):
     def __init__(self,
                  story_vocab,
                  frame_vocab,
-                 text_path= None):
+                 text_path):
         self.dialogs = json.load(open(text_path, 'r'))
-
+        self.max_sentence_len = 24
         self.story_vocab = story_vocab
         self.frame_vocab = frame_vocab
 
     def __getitem__(self, index):
-        index = str(index)
-        dialog = self.dialogs[index]
-        story = []
-        Frame = dialog['mapped_seq']
-        # LU = dialog['LU']
-        description = dialog['ner_description']
-
-        # print("description", description)
-        # print("Frame",Frame)
-        # for text in dialog['story']:
-        tokens = description.strip().split()
-        sentence=[]
-        story = []
-        sentence.extend([self.story_vocab(token) for token in tokens])
-        if len(sentence) > 23:
-            sentence = sentence[:24]
-        story.append(sentence)
-
-
         frame = []
-        tmp_frame = []
-        tmp_frame.extend([self.frame_vocab(frame) for frame in Frame ])
-        if len(tmp_frame) > 23:
-            tmp_frame = tmp_frame[:24]
-        frame.append(tmp_frame)
+        story = []
 
-        return sentence, tmp_frame
+        dialog = self.dialogs[str(index)]
+        for i, sen in enumerate(dialog):
+            sentence = []
+            tmp_frame = []
+            Frame = sen['mapped_seq']
+            description = sen['ner_description']
+            tokens = description.strip().split()
+
+            sentence.extend([self.story_vocab(token) for token in tokens])
+            tmp_frame.extend([self.frame_vocab(F) for F in Frame if self.frame_vocab(F)!=Constants.UNK])
+            if len(sentence) > self.max_sentence_len-1:
+                sentence = sentence[:self.max_sentence_len]
+            if len(tmp_frame) > self.max_sentence_len-1:
+                tmp_frame = tmp_frame[:self.max_sentence_len]
+
+            frame.append(tmp_frame)
+            story.append(sentence)
+
+        S, F, F_sen_pos = [], [], []
+        for i, (s, f ) in enumerate(zip(story, frame)):
+            S.append(Constants.BOSs[i])
+            F.append(Constants.BOSs[i])
+            S.extend(s)
+            F.extend(f)
+            F_sen_pos.extend([i+1]*(len(f)+1))
+        #print(len(F), len(F_sen_pos))
+        assert len(F) == len(F_sen_pos)
+        return S, F, F_sen_pos
 
     def __len__(self):
         return len(self.dialogs)
 
 def ROC_collate_fn(data):
 
-    texts, frame = zip(*data)
+    #List of sentences and frames [B,]
+    stories, frames, f_sen_pos = zip(*data)
 
-
-
-    lengths = [len(x)+1 for x in texts]
+    lengths = [len(x)+1 for x in stories]
     #max_seq_len = max(lengths)
-    max_seq_len = 25
-    texts = [[1] + s[:max_seq_len] + [2] + [0 for _ in range(max_seq_len - len(s) - 2)] for s in texts]
-    texts_pos = [[pos_i+1 if w_i != 0 else 0
-         for pos_i, w_i in enumerate(inst)] for inst in texts]
+    max_seq_len = 126
+    pad_stories = [s[:max_seq_len]+ [Constants.EOS] + [Constants.PAD for _ in range(max_seq_len - len(s) - 1)] for s in stories]
+    stories_pos = [[pos_i+1 if w_i != 0 else 0
+         for pos_i, w_i in enumerate(inst)] for inst in pad_stories]
 
 
-    frame_lengths = [len(x)+1 for x in frame]
+    frame_lengths = [len(x)+1 for x in frames]
     #max_frame_seq_len = max(frame_lengths)
-    max_frame_seq_len = 25
-    frame = [[1] + s + [2] + [0 for _ in range(max_frame_seq_len - len(s) - 2)] for s in frame]
+    max_frame_seq_len = 126
+    pad_frame = [s + [Constants.EOS] + [Constants.PAD for _ in range(max_frame_seq_len - len(s) - 1)] for s in frames]
+    pad_f_sen_pos = [s + [Constants.PAD for _ in range(max_frame_seq_len - len(s))] for s in f_sen_pos]
     frame_pos = [[pos_i+1 if w_i != 0 else 0
-         for pos_i, w_i in enumerate(inst)] for inst in frame]
+         for pos_i, w_i in enumerate(inst)] for inst in pad_frame]
 
     # print("texts",texts)
     # print("frame",frame)
     # print("lengths",max_seq_len)
     # print("max_frame_seq_len",max_frame_seq_len)
-    targets = torch.LongTensor(texts).view(-1, max_seq_len)
+    targets = torch.LongTensor(pad_stories).view(-1, max_seq_len)
     lengths = torch.LongTensor(lengths).view(-1,1)
-    targets_pos = torch.LongTensor(texts_pos).view(-1, max_seq_len)
-    frame = torch.LongTensor(frame).view(-1,max_frame_seq_len)
+    targets_pos = torch.LongTensor(stories_pos).view(-1, max_seq_len)
+    frame = torch.LongTensor(pad_frame).view(-1,max_frame_seq_len)
     frame_lengths = torch.LongTensor(frame_lengths).view(-1,1)
-    frame_pos = torch.LongTensor(frame_pos).view(-1, max_seq_len)
+    frame_pos = torch.LongTensor(frame_pos).view(-1, max_frame_seq_len)
+    frame_sen_pos = torch.LongTensor(pad_f_sen_pos).view(-1, max_frame_seq_len)
 
-
-    #return targets, lengths, frame, frame_lengths
-    return frame, frame_pos, targets, targets_pos
+    return frame, frame_pos, frame_sen_pos, targets, targets_pos
 
 
 
