@@ -43,7 +43,7 @@ class Translator(object):
         self.model = model
         self.model.eval()
 
-    def translate_batch(self, src_seq, src_pos):
+    def translate_batch(self, src_seq, src_pos, src_sen_pos):
         ''' Translation work in one batch '''
 
         def get_inst_idx_to_tensor_position_map(inst_idx_list):
@@ -133,8 +133,8 @@ class Translator(object):
 
         with torch.no_grad():
             #-- Encode
-            src_seq, src_pos = src_seq.to(self.device), src_pos.to(self.device)
-            src_enc, *_ = self.model.encoder(src_seq, src_pos)
+            src_seq, src_pos, src_sen_pos = src_seq.to(self.device), src_pos.to(self.device), src_sen_pos.to(self.device)
+            src_enc, *_ = self.model.encoder(src_seq, src_pos, src_sen_pos)
 
             #-- Repeat data for beam search
             n_bm = self.opt.beam_size

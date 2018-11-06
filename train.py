@@ -17,7 +17,7 @@ from transformer.Models import Transformer
 from transformer.Optim import ScheduledOptim
 #from revised_loader import revised_Loaders
 from ROC_loader_manager import Loaders
-from build_vocab import Vocabulary
+from build_roc_story_vocab import Vocabulary
 def cal_performance(pred, gold, smoothing=False):
     ''' Apply label smoothing if needed '''
 
@@ -68,13 +68,24 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
             desc='  - (Training)   ', leave=False):
 
         # prepare data
-        src_seq, src_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
+        src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
         gold = tgt_seq[:, 1:]
 
         # forward
         optimizer.zero_grad()
-        pred = model(src_seq, src_pos, tgt_seq, tgt_pos)
-
+        pred = model(src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos)
+        """
+        print('Prediction:' + '\n')
+        pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx] for idx in pred[0]])
+        print(pred_line + '\n')
+        print('Frame:' + '\n')
+        pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in src_seq[0]])
+        print(pred_line + '\n')
+        print('Ground Truth:' + '\n')
+        pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in tgt_seq[0]])
+        print(pred_line + '\n')
+        print("===============================================\n")
+        """
         # backward
         loss, n_correct = cal_performance(pred, gold, smoothing=smoothing)
         loss.backward()
@@ -109,11 +120,11 @@ def eval_epoch(model, validation_data, device):
                 desc='  - (Validation) ', leave=False):
 
             # prepare data
-            src_seq, src_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
+            src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
             gold = tgt_seq[:, 1:]
 
             # forward
-            pred = model(src_seq, src_pos, tgt_seq, tgt_pos)
+            pred = model(src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos)
             loss, n_correct = cal_performance(pred, gold, smoothing=False)
 
             # note keeping
@@ -198,7 +209,7 @@ def main():
     #parser.add_argument('-data', required=True)
 
     parser.add_argument('-epoch', type=int, default=200)
-    parser.add_argument('-batch_size', type=int, default=64)
+    parser.add_argument('-batch_size', type=int, default=32)
 
     #parser.add_argument('-d_word_vec', type=int, default=512)
     parser.add_argument('-d_model', type=int, default=512)
@@ -230,7 +241,7 @@ def main():
     #========= Loading Dataset =========#
     #data = torch.load(opt.data)
     #opt.max_token_seq_len = data['settings'].max_token_seq_len
-    opt.max_token_seq_len = 26
+    opt.max_token_seq_len = 126
 
     Dataloader = Loaders()
     Dataloader.get_loaders(opt)

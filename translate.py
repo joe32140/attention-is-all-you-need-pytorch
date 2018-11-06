@@ -10,7 +10,7 @@ from transformer.Translator import Translator
 from preprocess import read_instances_from_file, convert_instance_to_idx_seq
 from ROC_loader_manager import Loaders
 from build_vocab import Vocabulary
-
+from transformer import Constants
 def main():
     '''Main Function'''
 
@@ -25,7 +25,7 @@ def main():
     parser.add_argument('-output', default='pred.txt',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
-    parser.add_argument('-beam_size', type=int, default=5,
+    parser.add_argument('-beam_size', type=int, default=8,
                         help='Beam size')
     parser.add_argument('-batch_size', type=int, default=1,
                         help='Batch size')
@@ -60,7 +60,7 @@ def main():
 
     Dataloader = Loaders()
     Dataloader.get_loaders(opt)
-    test_loader = Dataloader.loader['val']
+    test_loader = Dataloader.loader['test']
 
     opt.src_vocab_size = len(Dataloader.frame_vocab)
     opt.tgt_vocab_size = len(Dataloader.story_vocab)
@@ -68,15 +68,18 @@ def main():
     translator = Translator(opt)
 
     with open(opt.output, 'w', buffering=1) as f:
-        for frame, frame_pos, gt_seqs, _ in tqdm(test_loader, mininterval=2, desc='  - (Test)', leave=False):
-            all_hyp, all_scores = translator.translate_batch(frame, frame_pos)
+        for frame, frame_pos, frame_sen_pos, gt_seqs, _ in tqdm(test_loader, mininterval=2, desc='  - (Test)', leave=False):
+            all_hyp, all_scores = translator.translate_batch(frame, frame_pos, frame_sen_pos)
             for idx_seqs in all_hyp:
                 for idx_frame, idx_seq, gt_seq in zip(frame, idx_seqs, gt_seqs):
-                    pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx] for idx in idx_seq])
+                    f.write('Prediction:' + '\n')
+                    pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx] for idx in idx_seq if idx!=Constants.BOS])
                     f.write(pred_line + '\n')
-                    pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in idx_frame])
+                    f.write('Frame:' + '\n')
+                    pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in idx_frame if idx!=Constants.PAD])
                     f.write(pred_line + '\n')
-                    pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in gt_seq])
+                    f.write('Ground Truth:' + '\n')
+                    pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in gt_seq if idx!=Constants.PAD])
                     f.write(pred_line + '\n')
                     f.write("===============================================\n")
     print('[Info] Finished.')
