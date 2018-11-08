@@ -50,7 +50,7 @@ class ROCDataset(Dataset):
             F.append(Constants.BOSs[i])
             S.extend(s)
             F.extend(f)
-            F_sen_pos.extend([i+1]*(len(f)+1))
+            F_sen_pos.extend([i]*(len(f)+1))
         #print(len(F), len(F_sen_pos))
         assert len(F) == len(F_sen_pos)
         return S, F, F_sen_pos
