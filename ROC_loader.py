@@ -17,6 +17,7 @@ class ROCDataset(Dataset):
                  story_vocab,
                  frame_vocab,
                  text_path):
+        print(text_path)
         self.dialogs = json.load(open(text_path, 'r'))
         self.max_sentence_len = 24
         self.story_vocab = story_vocab
@@ -25,15 +26,15 @@ class ROCDataset(Dataset):
     def __getitem__(self, index):
         frame = []
         story = []
-
         dialog = self.dialogs[str(index)]
         for i, sen in enumerate(dialog):
             sentence = []
             tmp_frame = []
             Frame = sen['mapped_seq']
-            description = sen['ner_description']
-            tokens = description.strip().split()
-
+            #description = sen['ner_description']
+            description = sen['description'].lower()
+            #tokens = description.strip().split()
+            tokens = nltk.word_tokenize(description)
             sentence.extend([self.story_vocab(token) for token in tokens])
             tmp_frame.extend([self.frame_vocab(F) for F in Frame if self.frame_vocab(F)!=Constants.UNK])
             if len(sentence) > self.max_sentence_len-1:
@@ -57,6 +58,7 @@ class ROCDataset(Dataset):
 
     def __len__(self):
         return len(self.dialogs)
+
 
 def ROC_collate_fn(data):
 
@@ -99,6 +101,15 @@ def get_ROC_loader(text, roc_vocab, frame_vocab, batch_size, shuffle, num_worker
     ROC = ROCDataset(roc_vocab,
                      frame_vocab,
                      text_path=text)
+
+    data_loader = torch.utils.data.DataLoader(dataset=ROC,
+                                              batch_size=batch_size,
+                                              shuffle=shuffle,
+                                              num_workers=num_workers,
+                                              collate_fn=ROC_collate_fn)
+    return data_loader
+
+def get_COCO_loader(ROC, roc_vocab, frame_vocab, batch_size, shuffle, num_workers, fixed_len=False, is_flat = False):
 
     data_loader = torch.utils.data.DataLoader(dataset=ROC,
                                               batch_size=batch_size,

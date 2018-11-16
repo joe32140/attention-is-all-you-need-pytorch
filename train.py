@@ -54,15 +54,15 @@ def cal_loss(pred, gold, smoothing):
     return loss
 
 
-def train_epoch(model, training_data, optimizer, device, smoothing):
+def train_epoch(model, training_data, coco_data, optimizer, device, smoothing, Dataloader):
     ''' Epoch operation in training phase'''
 
     model.train()
-
+    coco_iter = iter(coco_data)
     total_loss = 0
     n_word_total = 0
     n_word_correct = 0
-
+    count = 0
     for batch in tqdm(
             training_data, mininterval=2,
             desc='  - (Training)   ', leave=False):
@@ -71,21 +71,22 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
         src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
         gold = tgt_seq[:, 1:]
 
+        # coco data
+        coco_batch = next(coco_iter)
+        src_seq_c, src_pos_c, src_sen_pos_c, tgt_seq_c, tgt_pos_c = map(lambda x: x.to(device), coco_batch)
+        gold_c = tgt_seq_c[:, 1:]
+
+        src_seq = torch.cat((src_seq,src_seq_c), 0)
+        src_pos = torch.cat((src_pos,src_pos_c), 0)
+        src_sen_pos = torch.cat((src_sen_pos,src_sen_pos_c), 0)
+        tgt_seq = torch.cat((tgt_seq,tgt_seq_c), 0)
+        tgt_pos = torch.cat((tgt_pos,tgt_pos_c), 0)
+        gold = torch.cat((gold,gold_c), 0)
+
         # forward
         optimizer.zero_grad()
         pred = model(src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos)
-        """
-        print('Prediction:' + '\n')
-        pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx] for idx in pred[0]])
-        print(pred_line + '\n')
-        print('Frame:' + '\n')
-        pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in src_seq[0]])
-        print(pred_line + '\n')
-        print('Ground Truth:' + '\n')
-        pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in tgt_seq[0]])
-        print(pred_line + '\n')
-        print("===============================================\n")
-        """
+
         # backward
         loss, n_correct = cal_performance(pred, gold, smoothing=smoothing)
         loss.backward()
@@ -94,6 +95,19 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
         optimizer.step_and_update_lr()
 
         # note keeping
+        count +=1
+        if count%100==0:
+            print('Prediction:' + '\n')
+            pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in torch.topk(pred[0:60],1,1)[1]])
+            print(pred_line + '\n')
+            print('Frame:' + '\n')
+            pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in src_seq[0][:60]])
+            print(pred_line + '\n')
+            print('Ground Truth:' + '\n')
+            pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in tgt_seq[0][:60]])
+            print(pred_line + '\n')
+            print(f"Loss: {loss.item()}")
+            print("===============================================\n")
         total_loss += loss.item()
 
         non_pad_mask = gold.ne(Constants.PAD)
@@ -105,7 +119,7 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
     accuracy = n_word_correct/n_word_total
     return loss_per_word, accuracy
 
-def eval_epoch(model, validation_data, device):
+def eval_epoch(model, validation_data, device, Dataloader, opt):
     ''' Epoch operation in evaluation phase '''
 
     model.eval()
@@ -126,6 +140,18 @@ def eval_epoch(model, validation_data, device):
             # forward
             pred = model(src_seq, src_pos, src_sen_pos, tgt_seq, tgt_pos)
             loss, n_correct = cal_performance(pred, gold, smoothing=False)
+            # test
+            print('Prediction:' + '\n')
+            pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in torch.topk(pred[0:20],1,1)[1]])
+            print(pred_line + '\n')
+            print('Frame:' + '\n')
+            pred_line = ' '.join([Dataloader.frame_vocab.idx2word[idx.item()] for idx in src_seq[0][:20]])
+            print(pred_line + '\n')
+            print('Ground Truth:' + '\n')
+            pred_line = ' '.join([Dataloader.story_vocab.idx2word[idx.item()] for idx in tgt_seq[0][:20]])
+            print(pred_line + '\n')
+            print(f"Loss: {loss.item()}")
+            print("===============================================\n")
 
             # note keeping
             total_loss += loss.item()
@@ -139,7 +165,7 @@ def eval_epoch(model, validation_data, device):
     accuracy = n_word_correct/n_word_total
     return loss_per_word, accuracy
 
-def train(model, training_data, validation_data, optimizer, device, opt):
+def train(model, training_data, validation_data, coco_data, optimizer, device, opt, Dataloader):
     ''' Start training '''
 
     log_train_file = None
@@ -162,14 +188,14 @@ def train(model, training_data, validation_data, optimizer, device, opt):
 
         start = time.time()
         train_loss, train_accu = train_epoch(
-            model, training_data, optimizer, device, smoothing=opt.label_smoothing)
+            model, training_data, coco_data, optimizer, device, smoothing=opt.label_smoothing, Dataloader=Dataloader)
         print('  - (Training)   ppl: {ppl: 8.5f}, accuracy: {accu:3.3f} %, '\
               'elapse: {elapse:3.3f} min'.format(
                   ppl=math.exp(min(train_loss, 100)), accu=100*train_accu,
                   elapse=(time.time()-start)/60))
 
         start = time.time()
-        valid_loss, valid_accu = eval_epoch(model, validation_data, device)
+        valid_loss, valid_accu = eval_epoch(model, validation_data, device, Dataloader, opt)
         print('  - (Validation) ppl: {ppl: 8.5f}, accuracy: {accu:3.3f} %, '\
                 'elapse: {elapse:3.3f} min'.format(
                     ppl=math.exp(min(valid_loss, 100)), accu=100*valid_accu,
@@ -185,10 +211,10 @@ def train(model, training_data, validation_data, optimizer, device, opt):
 
         if opt.save_model:
             if opt.save_mode == 'all':
-                model_name = opt.save_model + '_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
+                model_name = './models/'+ opt.save_model + '_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
                 torch.save(checkpoint, model_name)
             elif opt.save_mode == 'best':
-                model_name = opt.save_model + '.chkpt'
+                model_name = './models/'+opt.save_model + '.chkpt'
                 if valid_accu >= max(valid_accus):
                     torch.save(checkpoint, model_name)
                     print('    - [Info] The checkpoint file has been updated.')
@@ -217,9 +243,10 @@ def main():
     parser.add_argument('-d_k', type=int, default=64)
     parser.add_argument('-d_v', type=int, default=64)
 
-    parser.add_argument('-n_head', type=int, default=8)
-    parser.add_argument('-n_layers', type=int, default=6)
-    parser.add_argument('-n_warmup_steps', type=int, default=4000)
+    parser.add_argument('-n_head', type=int, default=4)
+    parser.add_argument('-n_layers', type=int, default=4)
+    parser.add_argument('-n_warmup_steps', type=int, default=2000)
+    #parser.add_argument('-n_warmup_steps', type=int, default=4000)
 
     parser.add_argument('-dropout', type=float, default=0.1)
     parser.add_argument('-embs_share_weight', action='store_true')
@@ -245,7 +272,7 @@ def main():
 
     Dataloader = Loaders()
     Dataloader.get_loaders(opt)
-    training_data, validation_data = Dataloader.loader['train'], Dataloader.loader['val']
+    training_data, validation_data, coco_data = Dataloader.loader['train'], Dataloader.loader['val'], Dataloader.loader['coco']
 
     opt.src_vocab_size = len(Dataloader.frame_vocab)
     opt.tgt_vocab_size = len(Dataloader.story_vocab)
@@ -283,7 +310,7 @@ def main():
             betas=(0.9, 0.98), eps=1e-09),
         opt.d_model, opt.n_warmup_steps)
 
-    train(transformer, training_data, validation_data, optimizer, device ,opt)
+    train(transformer, training_data, validation_data, coco_data, optimizer, device ,opt, Dataloader)
 
 
 def prepare_dataloaders(data, opt):

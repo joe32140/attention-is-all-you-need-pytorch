@@ -54,6 +54,7 @@ def build_glove_voc(threshold, vocab, paragraph):
     return weight_matrix
 
 def clean_str(string):
+    string = string.lower()
     string = re.sub(u"(\u2018|\u2019)", "'", string)
     string = re.sub(u'(\u201c|\u201d)', '"', string)
     string = re.sub(r"\'s", " \'s", string)
@@ -63,30 +64,49 @@ def clean_str(string):
     string = re.sub(r"\'d", " \'d", string)
     string = re.sub(r"\'ll", " \'ll", string)
     string = re.sub(r"\'m", " \'m", string)
-    string = re.sub(r"\.","\ .", string)
-    string = re.sub(r"\!","\ !", string)
-    string = re.sub(r"\,","\ ,", string)
+    string = re.sub(r"\"s", " \'s", string)
+    string = re.sub(r"\"ve", " \'ve", string)
+    string = re.sub(r"n\"t", " n\'t", string)
+    string = re.sub(r"\"re", " \'re", string)
+    string = re.sub(r"\"d", " \'d", string)
+    string = re.sub(r"\"ll", " \'ll", string)
+    string = re.sub(r"\"m", " \'m", string)
+    string = re.sub(r"\."," .", string)
+    string = re.sub(r"\!"," !", string)
+    string = re.sub(r"\,"," ,", string)
+    #string = re.sub(r" "," ", string)
 
 
     return string
 
-def build_vocab(text, threshold, paragraph):
+def build_vocab(text, threshold, coco):
     """Build a simple vocabulary wrapper."""
     # dialog = json.load(open(text[0], 'r'))
-    dialog = open(text[0], 'r')
-    dialog = dialog.readlines()
-    print(len(dialog))
     counter = Counter()
 
-    for i, sentence in enumerate(dialog):
-        if i % 10000 == 0 :
+    print(text[0])
+    dialog = json.load(open(text[0]))
+    print(len(dialog))
+    for i, dia in enumerate(dialog.keys()):
+        if i % 5000 == 0 :
             print(i)
-        candidate_frame = ""
-        sentence = clean_str(sentence).split(" ")
-        counter.update(sentence)
+        for _, u in enumerate(dialog[dia]):
+            #sentence = clean_str(u['ner_description']).split(" ")
+            sentence = u['ner_description'].lower()
+            tokens = nltk.word_tokenize(sentence)
+            counter.update(tokens)
 
-        #if i % 1000 == 0:
-         #   print("[%d/%d] Tokenized the captions." %(i, len(dialog['annotations'])))
+    print(text[1])
+    dialog = json.load(open(text[1]))
+    print(len(dialog))
+    for i, dia in enumerate(dialog.keys()):
+        if i % 5000 == 0 :
+            print(i)
+        for _, u in enumerate(dialog[dia]):
+            #sentence = clean_str(u['description']).split(" ")
+            sentence = u['description'].lower()
+            tokens = nltk.word_tokenize(sentence)
+            counter.update(tokens)
 
     # If the word frequency is less than 'threshold', then the word is discarded.
     words = [word for word, cnt in counter.items() if cnt >= threshold]
@@ -95,7 +115,6 @@ def build_vocab(text, threshold, paragraph):
     word_count = {}
     for word, cnt in counter.items():
         word_count[word] = cnt
-    print("word_count",word_count)
     vocab.add_word(Constants.PAD_WORD)
     vocab.add_word(Constants.UNK_WORD)
     vocab.add_word(Constants.BOS_WORD)
@@ -119,8 +138,8 @@ def main(args):
     if not os.path.exists(args.vocab_dir):
         os.makedirs(args.vocab_dir)
         print("Make Data Directory")
-    vocab = build_vocab(text=[args.caption_path],
-                        threshold=args.threshold, paragraph=args.paragraph)
+    vocab = build_vocab(text=[args.caption_path, args.caption_path2],
+                        threshold=args.threshold, coco=args.coco)
     #W = build_glove_voc(len(vocab), vocab, args.paragraph)
     vocab_path = os.path.join(args.vocab_dir, 'ROC_Story_vocab.pkl')
     #weight_path = os.path.join(args.vocab_dir, 'W.pkl')
@@ -138,18 +157,18 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--caption_path', type=str,
-                        default="/home/cloud60138/data/ROC/ROC_ner_Story.txt",
+                        default="/home/cloud60138/data/ROC_Story_fivesentwith_onlyVerbframe_lu_train_filtered.json",
                         help='path for train annotation file')
-    #parser.add_argument('--caption_path2', type=str,
-    #                    default='../event_data/event_clean_val.json',
-    #                    help='path for train annotation file')
+    parser.add_argument('--caption_path2', type=str,
+                        default='../data/COCO_desription_with_existed_verb_frame_mappedSeq.json',
+                        help='path for train annotation file')
     #parser.add_argument('--caption_path3', type=str,
     #                    default='../event_data/event_clean_test.json')
     parser.add_argument('--vocab_dir', type=str, default='../data/',
                         help='path for saving vocabulary wrapper')
-    parser.add_argument('--threshold', type=int, default=4,
+    parser.add_argument('--threshold', type=int, default=5,
                         help='minimum word count threshold')
-    parser.add_argument('--paragraph', action='store_true', default=False,
+    parser.add_argument('--coco', action='store_true', default=False,
                         help='minimum word count threshold')
     parser.add_argument('--parse', action='store_true', default=False,
                         help='minimum word count threshold')
